@@ -1,0 +1,150 @@
+syntax = "proto3";
+package spire.api.issuer;
+
+import "spire/type/attestation.proto";
+import "spire/type/svid/x509svid.proto";
+import "spire/type/svid/jwtsvid.proto";
+
+// X509SVIDParams are the parameters the issuer needs to mint an X509-SVID
+message X509SVIDParams {
+    bytes public_key = 1;
+}
+
+// JWTSVIDParams are the parameters the issuer needs to mint a JWT-SVID
+message JWTSVIDParams {
+    repeated string audience = 1;
+}
+
+message AttestForX509SVIDRequest {
+    message Params {
+        spire.type.AttestationData data = 1;
+        X509SVIDParams params = 2;
+    }
+
+    oneof step {
+        // Attestation parameters. These are only sent in the initial request.
+        Params params = 1;
+
+        // The response to a challenge issued by the attestor. Only sent in
+        // response to a challenge received by the issuer.
+        bytes challenge_response = 2;
+    }
+}
+
+message AttestForX509SVIDResponse {
+    message Result {
+        spire.type.svid.X509SVID canonical_identity = 1;
+        repeated spire.type.svid.X509SVID attributed_identities = 2;
+    }
+
+    oneof step {
+        // Attestation results. If set, attestation has completed.
+        Result result = 1;
+
+        // A challenge issued by the attestor. If set, the caller is expected
+        // to send another request on the stream with the challenge response.
+        bytes challenge = 2;
+    }
+}
+
+message RenewX509SVIDRequest {
+    message Ack {};
+
+    oneof step {
+        // PKIX encoded public key of the renew
+        X509SVIDParams params = 1;
+
+        // An acknowledgement by the receiving end that it has received the
+        // renewed canonical identity SVID and will be using it in future
+        // requests.
+        Ack ack = 2;
+    }
+}
+
+message RenewX509SVIDResponse {
+    // The renewed X509-SVID
+    spire.type.svid.X509SVID svid = 1;
+}
+
+message NewX509SVIDRequest {
+    // The unique ID of the identity being requested
+    string identity_uuid = 1;
+
+    // Parameters for the X509-SVID
+    X509SVIDParams params = 2;
+}
+
+message NewX509SVIDResponse {
+    // The newly issued X509-SVID
+    spire.type.svid.X509SVID svid = 1;
+}
+
+message NewJWTSVIDRequest {
+    // The unique ID of the identity being requested
+    string identity_uuid = 1;
+
+    // Parameters for the JWT-SVID
+    JWTSVIDParams params = 2;
+}
+
+message NewJWTSVIDResponse {
+    // The newly issued JWT-SVID
+    spire.type.svid.JWTSVID svid = 1;
+}
+
+message NewDownstreamX509CARequest {
+    // The public key of the downstream X509 CA to use in the new CA certificate.
+    bytes public_key = 1;
+}
+
+message NewDownstreamX509CAResponse {
+    // CA certificate and any intermediates part of the chain back to the root
+    // (DER encoded). The CA certificate is the first. 
+    repeated bytes ca_cert_chain = 1;
+
+    // Root CA certificates (DER encoded).
+    repeated bytes root_cas = 2;
+}
+
+service Issuer {
+    // AttestForX509SVID attests the caller using node attestation. The result
+    // of attestation is either an SVID for a canonical identity or one or more
+    // SVIDs for attributed identities. SVIDs for canonical identies can be
+    // renewed via the RenewX509SVID() call. SVIDs for attributed identities
+    // cannot be renewed directly and can only be obtained through another
+    // call to AttestForX509SVID().
+    //
+    // AttestForX509SVID uses a bidirectional stream to faciliate attestation
+    // methods that require challenge/response.
+    //
+    // Authorized callers:
+    // - anybody
+    rpc AttestForX509SVID(stream AttestForX509SVIDRequest) returns (stream AttestForX509SVIDResponse);
+
+    // RenewX509SVID renews a previously issued X509-SVID for a canonical
+    // identity. It is streaming to facilitate a two-phase commit of the
+    // renewed SVID issuance.
+    //
+    // Authorized callers:
+    // - canonical identities
+    rpc RenewX509SVID(stream RenewX509SVIDRequest) returns (stream RenewX509SVIDResponse);
+
+    // NewX509SVID creates an X509-SVID
+    //
+    // Authorized callers:
+    // - delegatee of the delegated identity (direct or otherwise)
+    rpc NewX509SVID(NewX509SVIDRequest) returns (NewX509SVIDResponse);
+
+    // NewJWTSVID creates an JWT-SVID
+    //
+    // Authorized callers:
+    // - delegatee of the delegated identity (direct or otherwise)
+    rpc NewJWTSVID(NewJWTSVIDRequest) returns (NewJWTSVIDResponse);
+
+    // NewDownstreamX509CA creates an X509 CA appropriate for use by a
+    // downstream entity to mint X509-SVIDs.
+    //
+    // Authorized callers:
+    // - downstream identities
+    rpc NewDownstreamX509CA(NewDownstreamX509CARequest) returns (NewDownstreamX509CAResponse);
+}

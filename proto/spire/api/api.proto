@@ -1,0 +1,12 @@
+syntax = "proto3";
+package spire.api;
+option go_package = "github.com/spiffe/spire/proto/spire/api";
+
+message PageRequest {
+    string token = 1;
+    int32 size = 2;
+}
+
+message PageResponse {
+    string next_token = 1;
+}
